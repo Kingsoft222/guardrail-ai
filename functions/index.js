@@ -1,49 +1,39 @@
 const { onValueUpdated } = require("firebase-functions/v2/database");
+const logger = require("firebase-functions/logger");
 const axios = require("axios");
 
-// --- CONFIGURATION ---
-const EVOLUTION_BASE_URL = "https://your-api-url.com"; 
-const INSTANCE_NAME = "SolarGuard";
-const API_KEY = "YOUR_EVOLUTION_API_KEY";
+// Hardcoded for absolute reliability
+const BOT_TOKEN = "8753203495:AAHJySXwWYDbQJAL73aXE3Kk-JLPR9Rb4xs";
+const CHAT_ID = "5544479907";
 
-exports.guardianWhatsAppWatcher = onValueUpdated("/stats", async (event) => {
-  const data = event.data.after.val();
+exports.solarGuardGuardian = onValueUpdated("/stats", async (event) => {
+    const data = event.data.after.val();
+    if (!data) return null;
 
-  if (!data) return null;
+    logger.info("Guardian checking data...", data);
 
-  // 1. THE LOGIC: Is it Raining? Is Guardian Active? Is Load High?
-  if (data.hasRain && data.isGuardianActive && data.load > 1.0) {
-    
-    const phone = data.guardianPhone || "2348000000000"; 
-    const cleanPhone = phone.replace(/\D/g, '');
-    
-    // 2. RANDOMIZED WARNINGS (No more "Pump" obsession)
-    const warnings = [
-      `⚠️ *ATTENTION KINGSLEY:* Heavy rain detected and your current usage is high (${data.load}kW). Please reduce the load now.`,
-      `⚠️ *SOLARGUARD ALERT:* Storm conditions detected. Your power consumption is critically high at ${data.load}kW. Suggesting immediate shutdown of heavy appliances.`,
-      `⚠️ *URGENT:* Weather risk detected above your roof. Power draw is currently ${data.load}kW. Protect your inverter by lowering the usage.`
-    ];
-    
-    const randomMessage = warnings[Math.floor(Math.random() * warnings.length)];
+    const isRaining = data.hasRain === true;
+    const currentLoad = parseFloat(data.load) || 0;
 
-    try {
-      console.log(`Sending dynamic alert to ${cleanPhone}...`);
-      
-      await axios.post(`${EVOLUTION_BASE_URL}/message/sendText/${INSTANCE_NAME}`, {
-        number: cleanPhone,
-        text: randomMessage
-      }, {
-        headers: { 
-          'apikey': API_KEY, 
-          'Content-Type': 'application/json' 
+    if (isRaining) {
+        let alertMsg = "";
+        
+        if (currentLoad > 1.0) {
+            alertMsg = `⚠️ *URGENT ALERT*\nLoad: *${currentLoad}kW*\nStatus: *Heavy Rain* 🌧️\nPlease turn off heavy appliances!`;
+        } else {
+            alertMsg = "🌧️ *SolarGuard:* Rain detected. Monitoring your system...";
         }
-      });
-      
-      console.log("✅ Guardian Alert Sent Successfully!");
-    } catch (err) {
-      console.error("❌ WhatsApp Error:", err.response ? err.response.data : err.message);
+
+        try {
+            await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                chat_id: CHAT_ID,
+                text: alertMsg,
+                parse_mode: 'Markdown'
+            });
+            logger.info("✅ Alert sent to Telegram!");
+        } catch (err) {
+            logger.error("❌ Telegram Post Error:", err.message);
+        }
     }
-  }
-  
-  return null;
+    return null;
 });
