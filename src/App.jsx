@@ -31,7 +31,7 @@ export default function App() {
   const [isNight, setIsNight] = useState(false);
   const [isGoldenHour, setIsGoldenHour] = useState(false);
   const [isDashboardOpen, setIsDashboardOpen] = useState(true); 
-  const [locationName, setLocationName] = useState("Your Home");
+  const [locationName, setLocationName] = useState("Enugu");
   const [stormLevel, setStormLevel] = useState(0);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [battery, setBattery] = useState(84);
@@ -58,13 +58,17 @@ export default function App() {
     });
 
     const API_KEY = "0e202c926afc44769bd165226260604";
+    
     const fetchWeather = async (lat, lon) => {
+      const query = (lat && lon) ? `${lat},${lon}` : "Enugu";
       try {
-        const res = await axios.get(`https://api.weatherapi.com/v1/current.json?key=${API_KEY}&q=${lat},${lon}&aqi=no`);
+        const res = await axios.get(`https://api.weatherapi.com/v1/current.json?key=${API_KEY}&q=${query}&aqi=no`);
         const condition = res.data.current.condition.text.toLowerCase();
         const code = res.data.current.condition.code;
         
-        // WeatherAPI detection for rain and thunderstorms
+        console.log(`Weather Check: ${condition} (Code: ${code})`);
+
+        // WeatherAPI detects rain/storm from code 1063 upwards
         const rainDetected = condition.includes('rain') || condition.includes('thunder') || condition.includes('storm') || code >= 1063;
 
         const statusRef = ref(db, 'stats');
@@ -72,13 +76,26 @@ export default function App() {
         if (!snap.val()?.isTestRunning) {
           update(statusRef, { hasRain: rainDetected, lastSync: new Date().toISOString() });
         }
-      } catch (err) { console.log("WeatherAPI Syncing...") }
+      } catch (err) { console.log("Weather error") }
     };
 
-    navigator.geolocation.getCurrentPosition((pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude));
+    const hour = new Date().getHours();
+    setIsNight(hour >= 19 || hour <= 6);
+    setIsGoldenHour(hour === 18);
+
+    // Initial check
+    navigator.geolocation.getCurrentPosition(
+      (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
+      () => fetchWeather() // Fallback to Enugu
+    );
+
     const interval = setInterval(() => {
-      navigator.geolocation.getCurrentPosition((pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude));
+      navigator.geolocation.getCurrentPosition(
+        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
+        () => fetchWeather()
+      );
     }, 60000); 
+
     return () => { unsubscribe(); clearInterval(interval); };
   }, []);
 
