@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "kingsleystoreai"
+  },
+  "targets": {
+    "kingsleystoreai": {
+      "hosting": {
+        "solarguard": [
+          "solarguard"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
