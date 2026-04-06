@@ -3,7 +3,7 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { Sphere, MeshDistortMaterial, Float, Sky, Cloud, Stars } from '@react-three/drei';
 import { Zap, LayoutGrid, BarChart3, Droplets, Sun, Moon, Monitor, CloudRain, Bell, ChevronRight, ShieldCheck } from 'lucide-react';
 import axios from 'axios';
-import { ref, onValue, update } from "firebase/database"; // Added update for sync
+import { ref, onValue, update } from "firebase/database"; 
 import { db } from './firebase'; 
 import GuardianOnboarding from './GuardianOnboarding';
 
@@ -59,7 +59,6 @@ export default function App() {
   const [isGuardianActive, setIsGuardianActive] = useState(false);
 
   useEffect(() => {
-    // 1. Firebase Bridge: Listening to your 'stats' node
     const statsRef = ref(db, 'stats');
     const unsubscribe = onValue(statsRef, (snapshot) => {
       const data = snapshot.val();
@@ -70,7 +69,6 @@ export default function App() {
       }
     });
 
-    // 2. Saviour Weather Intel
     const API_KEY = "34258ccaf916e18b22be44cb96ab063c";
     const fetchWeather = async (lat, lon) => {
       const hour = new Date().getHours();
@@ -84,11 +82,9 @@ export default function App() {
         setStormLevel(clouds);
         setLocationName(res.data.name);
         
-        // Logic for Rain detection
         const rainDetected = (weatherId < 600) && (clouds > 90) && (humidity > 80);
         setHasRain(rainDetected);
 
-        // SYNC TO FIREBASE: This triggers the WhatsApp Cloud Function
         const statusRef = ref(db, 'stats');
         update(statusRef, { 
           hasRain: rainDetected,
@@ -113,15 +109,15 @@ export default function App() {
   const getSaviourMessage = () => {
     if (hasRain) {
       return totalWatts > 1.0 
-        ? `⚠️ OGA KINGSLEY! Heavy rain is pouring above your home roof. YOUR LOAD IS HIGH (${totalWatts}kW). SHUT DOWN THE PUMP NOW!` 
-        : `Oga, it's pouring above your home roof. Good thing the heavy loads are off. I'm monitoring the battery.`;
+        ? `⚠️ ALERT: Heavy rain detected above your roof. YOUR USAGE IS HIGH (${totalWatts}kW). Please reduce load immediately!` 
+        : `Monitoring active. Heavy rain detected, but your current power usage is at a safe level.`;
     }
     if (stormLevel > 75) {
-      return `Oga, the sky is getting dark above your home roof. Better finish pumping water now just in case.`;
+      return `The sky is darkening above your roof. Consider lowering usage in case of a sudden storm.`;
     }
     return isNight 
-      ? `Oga Kingsley, the night is peaceful above your home roof. Rest well while I watch your battery.`
-      : `Oga Kingsley, the sky is clear above your home roof. Your solar production is optimal.`;
+      ? `System stable. The night is peaceful above your roof. Monitoring your battery and environment.`
+      : `Optimal performance. The sky is clear and your solar production is currently at peak.`;
   };
 
   return (
@@ -214,7 +210,6 @@ export default function App() {
             </div>
           </div>
         ) : (
-          /* --- FULL SCREEN SAVIOUR VIEW --- */
           <div className="flex flex-col gap-6 mt-[35vh] animate-in fade-in duration-500">
             <div className="bg-white/5 backdrop-blur-[60px] p-10 rounded-[60px] border border-white/10 flex justify-between items-end">
               <div>
@@ -247,7 +242,7 @@ export default function App() {
       {/* ONBOARDING MODAL */}
       {showOnboarding && <GuardianOnboarding onClose={() => setShowOnboarding(false)} />}
       
-      {/* GOOGLE INFO BOX (FOR STARTUP CREDITS) */}
+      {/* GOOGLE INFO BOX */}
       <div style={{
         position: 'fixed',
         bottom: '85px',

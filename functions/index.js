@@ -8,28 +8,42 @@ const API_KEY = "YOUR_EVOLUTION_API_KEY";
 
 exports.guardianWhatsAppWatcher = onValueUpdated("/stats", async (event) => {
   const data = event.data.after.val();
-  const prevData = event.data.before.val();
 
-  // Safety check: Ensure data exists
-  if (!data || !prevData) return null;
+  if (!data) return null;
 
-  // LOGIC: It starts raining AND load is high AND guardian is opted-in
-  if (data.hasRain && !prevData.hasRain && data.load > 1.0 && data.isGuardianActive) {
+  // 1. THE LOGIC: Is it Raining? Is Guardian Active? Is Load High?
+  if (data.hasRain && data.isGuardianActive && data.load > 1.0) {
     
-    const cleanPhone = data.guardianPhone.replace(/\D/g, '');
-    const message = `⚠️ *OGA KINGSLEY!* Heavy rain detected above your roof and your load is ${data.load}kW. Abeg, shut down the pump!`;
+    const phone = data.guardianPhone || "2348000000000"; 
+    const cleanPhone = phone.replace(/\D/g, '');
+    
+    // 2. RANDOMIZED WARNINGS (No more "Pump" obsession)
+    const warnings = [
+      `⚠️ *ATTENTION KINGSLEY:* Heavy rain detected and your current usage is high (${data.load}kW). Please reduce the load now.`,
+      `⚠️ *SOLARGUARD ALERT:* Storm conditions detected. Your power consumption is critically high at ${data.load}kW. Suggesting immediate shutdown of heavy appliances.`,
+      `⚠️ *URGENT:* Weather risk detected above your roof. Power draw is currently ${data.load}kW. Protect your inverter by lowering the usage.`
+    ];
+    
+    const randomMessage = warnings[Math.floor(Math.random() * warnings.length)];
 
     try {
+      console.log(`Sending dynamic alert to ${cleanPhone}...`);
+      
       await axios.post(`${EVOLUTION_BASE_URL}/message/sendText/${INSTANCE_NAME}`, {
         number: cleanPhone,
-        text: message
+        text: randomMessage
       }, {
-        headers: { 'apikey': API_KEY, 'Content-Type': 'application/json' }
+        headers: { 
+          'apikey': API_KEY, 
+          'Content-Type': 'application/json' 
+        }
       });
-      console.log("Guardian Alert Sent Successfully!");
+      
+      console.log("✅ Guardian Alert Sent Successfully!");
     } catch (err) {
-      console.error("WhatsApp Error:", err.message);
+      console.error("❌ WhatsApp Error:", err.response ? err.response.data : err.message);
     }
   }
+  
   return null;
 });
