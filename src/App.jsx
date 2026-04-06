@@ -32,8 +32,6 @@ export default function App() {
   const [isGoldenHour, setIsGoldenHour] = useState(false);
   const [isDashboardOpen, setIsDashboardOpen] = useState(true); 
   const [locationName, setLocationName] = useState("Enugu");
-  const [stormLevel, setStormLevel] = useState(0);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [battery, setBattery] = useState(84);
   const [totalWatts, setTotalWatts] = useState(0.1);
   const [isGuardianActive, setIsGuardianActive] = useState(false);
@@ -58,7 +56,6 @@ export default function App() {
     });
 
     const API_KEY = "0e202c926afc44769bd165226260604";
-    
     const fetchWeather = async (lat, lon) => {
       const query = (lat && lon) ? `${lat},${lon}` : "Enugu";
       try {
@@ -66,34 +63,35 @@ export default function App() {
         const condition = res.data.current.condition.text.toLowerCase();
         const code = res.data.current.condition.code;
         
-        console.log(`Weather Check: ${condition} (Code: ${code})`);
-
-        // WeatherAPI detects rain/storm from code 1063 upwards
-        const rainDetected = condition.includes('rain') || condition.includes('thunder') || condition.includes('storm') || code >= 1063;
+        // Trigger for Rain, Storm, or Heavy Clouds
+        const isStormy = condition.includes('rain') || condition.includes('thunder') || condition.includes('storm') || condition.includes('overcast') || condition.includes('cloudy') || code >= 1063;
 
         const statusRef = ref(db, 'stats');
         const snap = await get(statusRef);
         if (!snap.val()?.isTestRunning) {
-          update(statusRef, { hasRain: rainDetected, lastSync: new Date().toISOString() });
+          const currentlyRainingInDB = snap.val()?.hasRain || false;
+          
+          // STICKY LOGIC: Stay dark unless API explicitly says it's Sunny/Clear
+          let finalRainState = isStormy;
+          if (currentlyRainingInDB && !condition.includes('clear') && !condition.includes('sunny')) {
+            finalRainState = true; 
+          }
+
+          const updates = { hasRain: finalRainState, lastSync: new Date().toISOString() };
+          if (!finalRainState) updates.initialRainAlertSent = false;
+
+          update(statusRef, updates);
         }
-      } catch (err) { console.log("Weather error") }
+      } catch (err) { console.log("Syncing...") }
     };
 
     const hour = new Date().getHours();
     setIsNight(hour >= 19 || hour <= 6);
     setIsGoldenHour(hour === 18);
 
-    // Initial check
-    navigator.geolocation.getCurrentPosition(
-      (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
-      () => fetchWeather() // Fallback to Enugu
-    );
-
+    navigator.geolocation.getCurrentPosition((pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude), () => fetchWeather());
     const interval = setInterval(() => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
-        () => fetchWeather()
-      );
+      navigator.geolocation.getCurrentPosition((pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude), () => fetchWeather());
     }, 60000); 
 
     return () => { unsubscribe(); clearInterval(interval); };
@@ -113,7 +111,7 @@ export default function App() {
       <div className={`absolute top-0 left-0 w-full transition-all duration-1000 ${isDashboardOpen ? 'h-[25vh] opacity-30' : 'h-[75vh]'}`}>
         <Canvas camera={{ position: [0, 0, 12], fov: 45 }}>
           <ambientLight intensity={isNight ? 0.05 : 1.5} />
-          <Suspense fallback={null}><WeatherSystem isNight={isNight} isGoldenHour={isGoldenHour} hasRain={hasRain} isDashboardOpen={isDashboardOpen} stormLevel={stormLevel} /></Suspense>
+          <Suspense fallback={null}><WeatherSystem isNight={isNight} isGoldenHour={isGoldenHour} hasRain={hasRain} isDashboardOpen={isDashboardOpen} /></Suspense>
         </Canvas>
       </div>
 
@@ -133,7 +131,7 @@ export default function App() {
             <div onClick={() => setShowOnboarding(true)} className={`p-5 rounded-[30px] border transition-all cursor-pointer flex justify-between items-center shadow-lg ${isGuardianActive ? 'bg-green-500/10 border-green-500/30' : 'bg-gradient-to-r from-gray-700 to-gray-800 border-white/10'}`}>
                <div className="flex items-center gap-4">
                   <div className={`p-2 rounded-xl ${isGuardianActive ? 'bg-green-500/20' : 'bg-white/10'}`}><ShieldCheck size={22} className={isGuardianActive ? 'text-green-400' : 'text-white/40'} /></div>
-                  <div><h3 className="text-sm font-black italic uppercase tracking-tight">{isGuardianActive ? 'Guardian Active' : 'Upgrade Pro Version'}</h3><p className="text-[10px] opacity-60 font-bold">{isGuardianActive ? 'WhatsApp Alerts Enabled' : 'WhatsApp Guardian Inactive'}</p></div>
+                  <div><h3 className="text-sm font-black italic uppercase tracking-tight">{isGuardianActive ? 'Guardian Active' : 'Upgrade Pro Version'}</h3><p className="text-[10px] opacity-60 font-bold">WhatsApp Alert Active</p></div>
                </div><ChevronRight size={18} className="opacity-40" />
             </div>
             <div className="grid grid-cols-2 gap-4">
