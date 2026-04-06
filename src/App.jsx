@@ -7,38 +7,20 @@ import { ref, onValue, update, get } from "firebase/database";
 import { db } from './firebase'; 
 import GuardianOnboarding from './GuardianOnboarding';
 
-// --- Weather Engine (3D Sky Logic) ---
 function WeatherSystem({ stormLevel, isNight, isGoldenHour, hasRain, isDashboardOpen }) {
   const cloudsRef = useRef();
   const lightningRef = useRef();
-  
   useFrame((state) => {
     if (cloudsRef.current) cloudsRef.current.position.x = Math.sin(state.clock.elapsedTime * 0.1) * 2;
-    if (hasRain && lightningRef.current) {
-      lightningRef.current.intensity = Math.random() > 0.94 ? 40 : 0;
-    }
+    if (hasRain && lightningRef.current) lightningRef.current.intensity = Math.random() > 0.94 ? 40 : 0;
   });
-
   const cloudColor = isNight ? "#1e293b" : (hasRain ? "#1a202c" : "#cbd5e1");
   const cloudOpacity = isDashboardOpen ? 0.1 : (hasRain ? 1 : 0.4);
-
   return (
     <>
-      <Sky 
-        sunPosition={isNight ? [0, -10, -1] : (isGoldenHour ? [10, 0.5, 5] : [10, 10, 10])} 
-        turbidity={hasRain ? 40 : 0.1}
-        rayleigh={isNight ? 0.1 : 2}
-      />
-      {!isNight && (
-        <group position={[4, 5, -5]}>
-          <pointLight ref={lightningRef} position={[-5, 5, 2]} color="#cae9ff" intensity={0} />
-        </group>
-      )}
-      <group ref={cloudsRef}>
-        <Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.5}>
-          <Cloud opacity={cloudOpacity} speed={0.4} width={20} segments={40} position={[-2, 1, -2]} color={cloudColor} />
-        </Float>
-      </group>
+      <Sky sunPosition={isNight ? [0, -10, -1] : (isGoldenHour ? [10, 0.5, 5] : [10, 10, 10])} turbidity={hasRain ? 40 : 0.1} rayleigh={isNight ? 0.1 : 2} />
+      {!isNight && <group position={[4, 5, -5]}><pointLight ref={lightningRef} position={[-5, 5, 2]} color="#cae9ff" intensity={0} /></group>}
+      <group ref={cloudsRef}><Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.5}><Cloud opacity={cloudOpacity} speed={0.4} width={20} segments={40} position={[-2, 1, -2]} color={cloudColor} /></Float></group>
       {isNight && <Stars radius={100} factor={4} speed={1} count={6000} />}
     </>
   );
@@ -56,16 +38,9 @@ export default function App() {
   const [totalWatts, setTotalWatts] = useState(0.1);
   const [isGuardianActive, setIsGuardianActive] = useState(false);
 
-  // --- TEST TRIGGER (Bypasses API Overwrites) ---
   const triggerRainTest = () => {
     const statsRef = ref(db, 'stats');
-    update(statsRef, {
-      hasRain: true,
-      load: 2.8, 
-      isTestRunning: true,
-      lastUpdate: Date.now() 
-    }).then(() => {
-      console.log("Test Sent! Checking bot...");
+    update(statsRef, { hasRain: true, load: 2.8, isTestRunning: true, lastUpdate: Date.now() }).then(() => {
       setTimeout(() => update(statsRef, { isTestRunning: false }), 15000);
     });
   };
@@ -84,48 +59,36 @@ export default function App() {
 
     const API_KEY = "34258ccaf916e18b22be44cb96ab063c";
     const fetchWeather = async (lat, lon) => {
-      const hour = new Date().getHours();
-      setIsNight(hour >= 19 || hour <= 6);
-      setIsGoldenHour(hour === 18);
       try {
         const res = await axios.get(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}`);
-        const clouds = res.data.clouds.all;
-        const weatherId = res.data.weather[0].id; 
-        const weatherDesc = res.data.weather[0].main.toLowerCase();
+        const id = res.data.weather[0].id;
+        const desc = res.data.weather[0].description.toLowerCase();
         
-        setStormLevel(clouds);
-        setLocationName(res.data.name);
-        
-        // Looser Rain Logic: Trigger if API says rain, drizzle, or storm OR ID < 700
-        const rainDetected = weatherDesc.includes('rain') || weatherDesc.includes('drizzle') || weatherDesc.includes('storm') || weatherId < 700;
+        // Strict check to catch "Thunderstorms" and "Light Rain"
+        const rainDetected = id < 700 || desc.includes('rain') || desc.includes('storm') || desc.includes('thunder');
 
         const statusRef = ref(db, 'stats');
         const snap = await get(statusRef);
         if (!snap.val()?.isTestRunning) {
-          update(statusRef, { 
-            hasRain: rainDetected,
-            clouds: clouds,
-            lastSync: new Date().toISOString()
-          });
+          update(statusRef, { hasRain: rainDetected, lastSync: new Date().toISOString() });
         }
-      } catch (err) { console.log("Sky Syncing...") }
+      } catch (err) { console.log("Sky Sync...") }
     };
 
     navigator.geolocation.getCurrentPosition((pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude));
     const interval = setInterval(() => {
       navigator.geolocation.getCurrentPosition((pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude));
     }, 60000); 
-
     return () => { unsubscribe(); clearInterval(interval); };
   }, []);
 
   const getSaviourMessage = () => {
     if (hasRain) {
       return totalWatts > 1.0 
-        ? `⚠️ ALERT: Heavy rain detected. YOUR USAGE IS HIGH (${totalWatts}kW). Reduce load!` 
-        : `Monitoring active. Rain detected, usage is safe.`;
+        ? `Oga, it's really raining outside, and your energy usage is high (${totalWatts}kW). Can we step it down?` 
+        : `Monitoring active. Rain is falling, but your usage is fine.`;
     }
-    return isNight ? `System stable. Night is peaceful.` : `Optimal performance. Clear skies.`;
+    return isNight ? `System stable. The night is peaceful.` : `Optimal performance. Sky is clear.`;
   };
 
   return (
@@ -133,9 +96,7 @@ export default function App() {
       <div className={`absolute top-0 left-0 w-full transition-all duration-1000 ${isDashboardOpen ? 'h-[25vh] opacity-30' : 'h-[75vh]'}`}>
         <Canvas camera={{ position: [0, 0, 12], fov: 45 }}>
           <ambientLight intensity={isNight ? 0.05 : 1.5} />
-          <Suspense fallback={null}>
-            <WeatherSystem isNight={isNight} isGoldenHour={isGoldenHour} hasRain={hasRain} isDashboardOpen={isDashboardOpen} stormLevel={stormLevel} />
-          </Suspense>
+          <Suspense fallback={null}><WeatherSystem isNight={isNight} isGoldenHour={isGoldenHour} hasRain={hasRain} isDashboardOpen={isDashboardOpen} stormLevel={stormLevel} /></Suspense>
         </Canvas>
       </div>
 
@@ -144,8 +105,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Kingsley" className="w-10 h-10 rounded-full bg-slate-800 border border-white/10" alt="user" />
             <div><p className="text-[10px] opacity-50 font-bold uppercase tracking-wider">Saviour Mode</p><h2 className="text-sm font-bold">Kingsley Aniukwu</h2></div>
-          </div>
-          <Bell size={20} className="opacity-40" />
+          </div><Bell size={20} className="opacity-40" />
         </div>
 
         {isDashboardOpen ? (
@@ -161,14 +121,13 @@ export default function App() {
             </div>
             <div className="grid grid-cols-2 gap-4">
                <div className="bg-[#11141b] p-6 rounded-[30px] border border-white/5 text-center shadow-xl"><p className="text-3xl font-black italic tracking-tighter">{battery}%</p><p className="text-[10px] opacity-40 font-bold uppercase mt-1">Battery</p></div>
-               <div className="bg-[#11141b] p-6 rounded-[30px] border border-white/5 text-center shadow-xl"><p className="text-3xl font-black italic tracking-tighter">{totalWatts}<span className="text-xs">kW</span></p><p className="text-[10px] opacity-40 font-bold uppercase mt-1">Total Load</p></div>
+               <div className="bg-[#11141b] p-6 rounded-[30px] border border-white/5 text-center shadow-xl"><p className="text-3xl font-black italic tracking-tighter">{totalWatts}<span className="text-xs">kW</span></p><p className="text-[10px] opacity-40 font-bold uppercase mt-1">Current Load</p></div>
             </div>
           </div>
         ) : (
           <div className="flex flex-col gap-6 mt-[35vh] animate-in fade-in duration-500">
             <div className="bg-white/5 backdrop-blur-[60px] p-10 rounded-[60px] border border-white/10 flex justify-between items-end">
-              <div><span className="text-8xl font-black tracking-tighter italic">{battery}%</span><p className="text-[11px] opacity-50 uppercase font-black mt-2 tracking-[0.3em]">Battery Health</p></div>
-              <Sun className="text-amber-300" size={40} />
+              <div><span className="text-8xl font-black tracking-tighter italic">{battery}%</span><p className="text-[11px] opacity-50 uppercase font-black mt-2 tracking-[0.3em]">Battery Health</p></div><Sun className="text-amber-300" size={40} />
             </div>
             <div className={`p-10 rounded-[45px] border-l-8 shadow-2xl backdrop-blur-md ${hasRain ? 'bg-red-900/40 border-red-500' : 'bg-black/40 border-amber-500'}`}><p className="text-2xl italic font-bold leading-tight">"{getSaviourMessage()}"</p></div>
           </div>
