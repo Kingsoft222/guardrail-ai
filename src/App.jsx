@@ -57,22 +57,22 @@ export default function App() {
       }
     });
 
-    const API_KEY = "34258ccaf916e18b22be44cb96ab063c";
+    const API_KEY = "0e202c926afc44769bd165226260604";
     const fetchWeather = async (lat, lon) => {
       try {
-        const res = await axios.get(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}`);
-        const id = res.data.weather[0].id;
-        const desc = res.data.weather[0].description.toLowerCase();
+        const res = await axios.get(`https://api.weatherapi.com/v1/current.json?key=${API_KEY}&q=${lat},${lon}&aqi=no`);
+        const condition = res.data.current.condition.text.toLowerCase();
+        const code = res.data.current.condition.code;
         
-        // Strict check to catch "Thunderstorms" and "Light Rain"
-        const rainDetected = id < 700 || desc.includes('rain') || desc.includes('storm') || desc.includes('thunder');
+        // WeatherAPI detection for rain and thunderstorms
+        const rainDetected = condition.includes('rain') || condition.includes('thunder') || condition.includes('storm') || code >= 1063;
 
         const statusRef = ref(db, 'stats');
         const snap = await get(statusRef);
         if (!snap.val()?.isTestRunning) {
           update(statusRef, { hasRain: rainDetected, lastSync: new Date().toISOString() });
         }
-      } catch (err) { console.log("Sky Sync...") }
+      } catch (err) { console.log("WeatherAPI Syncing...") }
     };
 
     navigator.geolocation.getCurrentPosition((pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude));

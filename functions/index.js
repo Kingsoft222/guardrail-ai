@@ -11,7 +11,6 @@ exports.solarGuardGuardian = onValueUpdated("/stats", async (event) => {
 
     const load = parseFloat(data.load) || 0;
     
-    // Nigerian Home "Sugar" Phrasing
     let alertMsg = "";
     if (load > 1.0) {
         alertMsg = `🇳🇬 *SolarGuard Report*\n\n"Oga, it's really raining outside, and your energy usage is high (${load}kW). Can we step it down? Just to keep the batteries safe till the weather clears." ⛈️`;
