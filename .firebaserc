@@ -1,15 +1,5 @@
 {
   "projects": {
-    "default": "kingsleystoreai"
-  },
-  "targets": {
-    "kingsleystoreai": {
-      "hosting": {
-        "solarguard": [
-          "solarguard"
-        ]
-      }
-    }
-  },
-  "etags": {}
+    "default": "saviour-app-f0afe"
+  }
 }

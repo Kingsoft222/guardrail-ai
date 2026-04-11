@@ -1,160 +1,160 @@
 import React, { useState, useEffect, Suspense, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Sphere, MeshDistortMaterial, Float, Sky, Cloud, Stars } from '@react-three/drei';
-import { Zap, LayoutGrid, BarChart3, Droplets, Sun, Moon, Monitor, CloudRain, Bell, ChevronRight, ShieldCheck } from 'lucide-react';
-import axios from 'axios';
-import { ref, onValue, update, get } from "firebase/database"; 
+import { Sky, Cloud, Stars, Float } from '@react-three/drei';
+// Explicit imports - essential for Vite 8 / Rolldown tree-shaking
+import { Zap, LayoutGrid, BarChart3, CloudRain, ShieldCheck, ChevronRight } from 'lucide-react';
+import { ref, onValue } from "firebase/database"; 
 import { db } from './firebase'; 
 import GuardianOnboarding from './GuardianOnboarding';
 
-function WeatherSystem({ stormLevel, isNight, isGoldenHour, hasRain, isDashboardOpen }) {
+function WeatherSystem({ isNight, hasRain, precip }) {
   const cloudsRef = useRef();
-  const lightningRef = useRef();
-  useFrame((state) => {
-    if (cloudsRef.current) cloudsRef.current.position.x = Math.sin(state.clock.elapsedTime * 0.1) * 2;
-    if (hasRain && lightningRef.current) lightningRef.current.intensity = Math.random() > 0.94 ? 40 : 0;
+  const visualRain = hasRain && precip > 0.5;
+
+  useFrame((state) => { 
+    if (cloudsRef.current) {
+      cloudsRef.current.position.x = Math.sin(state.clock.elapsedTime * 0.1) * 2; 
+    }
   });
-  const cloudColor = isNight ? "#1e293b" : (hasRain ? "#1a202c" : "#cbd5e1");
-  const cloudOpacity = isDashboardOpen ? 0.1 : (hasRain ? 1 : 0.4);
+
   return (
     <>
-      <Sky sunPosition={isNight ? [0, -10, -1] : (isGoldenHour ? [10, 0.5, 5] : [10, 10, 10])} turbidity={hasRain ? 40 : 0.1} rayleigh={isNight ? 0.1 : 2} />
-      {!isNight && <group position={[4, 5, -5]}><pointLight ref={lightningRef} position={[-5, 5, 2]} color="#cae9ff" intensity={0} /></group>}
-      <group ref={cloudsRef}><Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.5}><Cloud opacity={cloudOpacity} speed={0.4} width={20} segments={40} position={[-2, 1, -2]} color={cloudColor} /></Float></group>
-      {isNight && <Stars radius={100} factor={4} speed={1} count={6000} />}
+      <Sky 
+        sunPosition={isNight ? [0, -10, -1] : [10, 10, 10]} 
+        turbidity={visualRain ? 40 : 0.1} 
+      />
+      <group ref={cloudsRef}>
+        <Float speed={2} floatIntensity={1}>
+          <Cloud 
+            opacity={visualRain ? 1 : 0.2} 
+            speed={0.4} 
+            width={20} 
+            position={[-2, 2, -5]} 
+            color={visualRain ? "#1a202c" : "#ffffff"} 
+          />
+        </Float>
+      </group>
+      {isNight && <Stars radius={100} factor={4} />}
     </>
   );
 }
 
 export default function App() {
-  const [hasRain, setHasRain] = useState(false);
-  const [isNight, setIsNight] = useState(false);
-  const [isGoldenHour, setIsGoldenHour] = useState(false);
-  const [isDashboardOpen, setIsDashboardOpen] = useState(true); 
-  const [locationName, setLocationName] = useState("Enugu");
-  const [battery, setBattery] = useState(84);
-  const [totalWatts, setTotalWatts] = useState(0.1);
-  const [isGuardianActive, setIsGuardianActive] = useState(false);
-
-  const triggerRainTest = () => {
-    const statsRef = ref(db, 'stats');
-    update(statsRef, { hasRain: true, load: 2.8, isTestRunning: true, lastUpdate: Date.now() }).then(() => {
-      setTimeout(() => update(statsRef, { isTestRunning: false }), 15000);
-    });
-  };
+  const [data, setData] = useState({ 
+    battery: 0, 
+    load: 0, 
+    hasRain: false, 
+    precip: 0, 
+    userName: "Kingsley" 
+  });
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     const statsRef = ref(db, 'stats');
-    const unsubscribe = onValue(statsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setBattery(data.battery || 84);
-        setTotalWatts(data.load || 0.1);
-        setIsGuardianActive(data.isGuardianActive || false);
-        setHasRain(data.isTestRunning ? true : (data.hasRain || false));
-      }
+    const unsubscribe = onValue(statsRef, (snapshot) => { 
+      if (snapshot.exists()) setData(prev => ({ ...prev, ...snapshot.val() })); 
     });
-
-    const API_KEY = "0e202c926afc44769bd165226260604";
-    const fetchWeather = async (lat, lon) => {
-      const query = (lat && lon) ? `${lat},${lon}` : "Enugu";
-      try {
-        const res = await axios.get(`https://api.weatherapi.com/v1/current.json?key=${API_KEY}&q=${query}&aqi=no`);
-        const condition = res.data.current.condition.text.toLowerCase();
-        const code = res.data.current.condition.code;
-        
-        // Trigger for Rain, Storm, or Heavy Clouds
-        const isStormy = condition.includes('rain') || condition.includes('thunder') || condition.includes('storm') || condition.includes('overcast') || condition.includes('cloudy') || code >= 1063;
-
-        const statusRef = ref(db, 'stats');
-        const snap = await get(statusRef);
-        if (!snap.val()?.isTestRunning) {
-          const currentlyRainingInDB = snap.val()?.hasRain || false;
-          
-          // STICKY LOGIC: Stay dark unless API explicitly says it's Sunny/Clear
-          let finalRainState = isStormy;
-          if (currentlyRainingInDB && !condition.includes('clear') && !condition.includes('sunny')) {
-            finalRainState = true; 
-          }
-
-          const updates = { hasRain: finalRainState, lastSync: new Date().toISOString() };
-          if (!finalRainState) updates.initialRainAlertSent = false;
-
-          update(statusRef, updates);
-        }
-      } catch (err) { console.log("Syncing...") }
-    };
-
-    const hour = new Date().getHours();
-    setIsNight(hour >= 19 || hour <= 6);
-    setIsGoldenHour(hour === 18);
-
-    navigator.geolocation.getCurrentPosition((pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude), () => fetchWeather());
-    const interval = setInterval(() => {
-      navigator.geolocation.getCurrentPosition((pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude), () => fetchWeather());
-    }, 60000); 
-
-    return () => { unsubscribe(); clearInterval(interval); };
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => { unsubscribe(); clearInterval(timer); };
   }, []);
 
-  const getSaviourMessage = () => {
-    if (hasRain) {
-      return totalWatts > 1.0 
-        ? `Oga, it's really raining outside, and your energy usage is high (${totalWatts}kW). Can we step it down?` 
-        : `Monitoring active. Rain is falling, but your usage is fine.`;
-    }
-    return isNight ? `System stable. The night is peaceful.` : `Optimal performance. Sky is clear.`;
-  };
+  // Time Logic: 6:30 AM is 390 mins, 6:30 PM is 1110 mins
+  const totalMins = (currentTime.getHours() * 60) + currentTime.getMinutes();
+  const isNight = totalMins < 390 || totalMins > 1110; 
+  const firstName = (data.userName || "Kingsley").split(' ')[0];
+  const isStorming = data.hasRain && data.precip > 0.5;
 
   return (
-    <div className={`min-h-screen transition-all duration-1000 ${hasRain ? 'bg-black' : 'bg-[#05070a]'} p-6 flex flex-col overflow-hidden text-white font-sans`}>
-      <div className={`absolute top-0 left-0 w-full transition-all duration-1000 ${isDashboardOpen ? 'h-[25vh] opacity-30' : 'h-[75vh]'}`}>
-        <Canvas camera={{ position: [0, 0, 12], fov: 45 }}>
-          <ambientLight intensity={isNight ? 0.05 : 1.5} />
-          <Suspense fallback={null}><WeatherSystem isNight={isNight} isGoldenHour={isGoldenHour} hasRain={hasRain} isDashboardOpen={isDashboardOpen} /></Suspense>
+    <div className={`min-h-screen transition-all duration-1000 ${isStorming ? 'bg-black' : 'bg-[#05070a]'} p-6 flex flex-col text-white overflow-hidden`}>
+      {/* 3D Weather Layer */}
+      <div className="absolute top-0 left-0 w-full h-[35vh] opacity-40 pointer-events-none">
+        <Canvas camera={{ position: [0, 0, 12] }}>
+          <ambientLight intensity={isNight ? 0.1 : 1} />
+          <Suspense fallback={null}>
+            <WeatherSystem isNight={isNight} hasRain={data.hasRain} precip={data.precip} />
+          </Suspense>
         </Canvas>
       </div>
 
-      <div className="relative z-10 flex flex-col gap-6 h-full">
-        <div className="flex justify-between items-center">
+      <div className="relative z-10 flex flex-col gap-6 h-full flex-1">
+        {/* Header */}
+        <div className="flex justify-between items-start">
           <div className="flex items-center gap-3">
-            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Kingsley" className="w-10 h-10 rounded-full bg-slate-800 border border-white/10" alt="user" />
-            <div><p className="text-[10px] opacity-50 font-bold uppercase tracking-wider">Saviour Mode</p><h2 className="text-sm font-bold">Kingsley Aniukwu</h2></div>
-          </div><Bell size={20} className="opacity-40" />
+            <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center text-xl font-bold text-black">
+              {firstName[0]}
+            </div>
+            <div>
+              <p className="text-[10px] opacity-50 font-bold tracking-wider uppercase">Guardian AI</p>
+              <h2 className="text-sm font-bold">Oga {firstName}</h2>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs font-bold opacity-60">
+              {currentTime.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+            </p>
+            <p className="text-lg font-black italic text-amber-500">
+              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          </div>
         </div>
 
-        {isDashboardOpen ? (
-          <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
-            <div className={`p-5 rounded-[30px] border-l-8 shadow-2xl transition-all duration-500 ${hasRain && totalWatts > 1.0 ? 'bg-red-900/60 border-red-500 animate-pulse' : 'bg-white/5 border-amber-500'}`}>
-               <p className="text-sm italic font-bold">"{getSaviourMessage()}"</p>
-            </div>
-            <div onClick={() => setShowOnboarding(true)} className={`p-5 rounded-[30px] border transition-all cursor-pointer flex justify-between items-center shadow-lg ${isGuardianActive ? 'bg-green-500/10 border-green-500/30' : 'bg-gradient-to-r from-gray-700 to-gray-800 border-white/10'}`}>
-               <div className="flex items-center gap-4">
-                  <div className={`p-2 rounded-xl ${isGuardianActive ? 'bg-green-500/20' : 'bg-white/10'}`}><ShieldCheck size={22} className={isGuardianActive ? 'text-green-400' : 'text-white/40'} /></div>
-                  <div><h3 className="text-sm font-black italic uppercase tracking-tight">{isGuardianActive ? 'Guardian Active' : 'Upgrade Pro Version'}</h3><p className="text-[10px] opacity-60 font-bold">WhatsApp Alert Active</p></div>
-               </div><ChevronRight size={18} className="opacity-40" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-               <div className="bg-[#11141b] p-6 rounded-[30px] border border-white/5 text-center shadow-xl"><p className="text-3xl font-black italic tracking-tighter">{battery}%</p><p className="text-[10px] opacity-40 font-bold uppercase mt-1">Battery</p></div>
-               <div className="bg-[#11141b] p-6 rounded-[30px] border border-white/5 text-center shadow-xl"><p className="text-3xl font-black italic tracking-tighter">{totalWatts}<span className="text-xs">kW</span></p><p className="text-[10px] opacity-40 font-bold uppercase mt-1">Current Load</p></div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-6 mt-[35vh] animate-in fade-in duration-500">
-            <div className="bg-white/5 backdrop-blur-[60px] p-10 rounded-[60px] border border-white/10 flex justify-between items-end">
-              <div><span className="text-8xl font-black tracking-tighter italic">{battery}%</span><p className="text-[11px] opacity-50 uppercase font-black mt-2 tracking-[0.3em]">Battery Health</p></div><Sun className="text-amber-300" size={40} />
-            </div>
-            <div className={`p-10 rounded-[45px] border-l-8 shadow-2xl backdrop-blur-md ${hasRain ? 'bg-red-900/40 border-red-500' : 'bg-black/40 border-amber-500'}`}><p className="text-2xl italic font-bold leading-tight">"{getSaviourMessage()}"</p></div>
-          </div>
-        )}
+        {/* Status Card */}
+        <div className={`p-6 rounded-[35px] border-l-8 transition-all duration-500 shadow-xl ${isStorming && data.load > 1.5 ? 'bg-red-900/40 border-red-500 animate-pulse' : 'bg-white/5 border-amber-500'}`}>
+           <p className="text-lg italic font-bold leading-tight">
+             "{isStorming 
+                ? `Oga ${firstName}, rain is heavy. ${isNight ? 'Watch battery!' : 'Production down.'}` 
+                : isNight && data.load > 2.0 
+                ? `Oga ${firstName}, night usage high! Save battery.` 
+                : `Oga ${firstName}, system is stable!`}"
+           </p>
+        </div>
 
-        <div className="mt-auto flex justify-around items-center bg-[#11141b]/95 py-7 rounded-[50px] border border-white/5 mb-2 shadow-2xl">
-          <div onClick={() => setIsDashboardOpen(false)} className="cursor-pointer"><Zap size={24} className={!isDashboardOpen ? "text-white" : "text-white/30"} /></div>
-          <div onClick={triggerRainTest} className="cursor-pointer"><CloudRain size={24} className={hasRain ? "text-blue-400" : "text-white/30"} /></div>
-          <div className="p-4 bg-white/5 rounded-3xl border border-white/10" onClick={() => setIsDashboardOpen(true)}><LayoutGrid size={24} className={isDashboardOpen ? "text-amber-500" : "text-white"} /></div>
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-[#11141b] p-8 rounded-[40px] text-center shadow-lg border border-white/5">
+            <p className="text-4xl font-black italic">{data.battery || 0}%</p>
+            <p className="text-[10px] opacity-40 uppercase font-bold mt-2">Battery</p>
+          </div>
+          <div className="bg-[#11141b] p-8 rounded-[40px] text-center shadow-lg border border-white/5">
+            <p className="text-4xl font-black italic">{data.load || 0}<span className="text-sm ml-1">kW</span></p>
+            <p className="text-[10px] opacity-40 uppercase font-bold mt-2">Usage</p>
+          </div>
+        </div>
+
+        {/* Settings Toggle */}
+        <div 
+          onClick={() => setShowOnboarding(true)} 
+          className="p-5 rounded-[30px] border border-white/10 bg-white/5 flex justify-between items-center cursor-pointer active:scale-95 transition-transform"
+        >
+          <div className="flex items-center gap-4">
+            <ShieldCheck size={22} className="text-green-400" />
+            <div>
+              <h3 className="text-sm font-black italic uppercase text-white">Settings</h3>
+              <p className="text-[10px] opacity-60 text-white">Guardian Active</p>
+            </div>
+          </div>
+          <ChevronRight size={18} className="opacity-40 text-white" />
+        </div>
+
+        {/* Navigation Bar */}
+        <div className="mt-auto flex justify-around items-center bg-[#11141b]/95 py-6 rounded-[50px] border border-white/5 mb-2 shadow-2xl">
+          <Zap 
+            size={24} 
+            className={data.load > 1.5 ? "text-amber-400 animate-pulse" : "text-white/30"} 
+          />
+          <CloudRain 
+            size={24} 
+            className={isStorming ? "text-blue-400" : "text-white/30"} 
+          />
+          <div className="p-4 bg-white/5 rounded-3xl border border-white/10 shadow-inner">
+            <LayoutGrid size={24} className="text-amber-500" />
+          </div>
           <BarChart3 size={24} className="text-white/30" />
         </div>
       </div>
+
+      {/* Onboarding Modal */}
       {showOnboarding && <GuardianOnboarding onClose={() => setShowOnboarding(false)} />}
     </div>
   );

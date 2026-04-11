@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
+import { getAuth, GoogleAuthProvider } from "firebase/auth"; // Added Auth imports
 
 const firebaseConfig = {
   apiKey: "AIzaSyCszjVhHIvhj6TEm1h_sbFWHYVUwkiqeow",
@@ -17,3 +18,9 @@ const app = initializeApp(firebaseConfig);
 
 // Export the database so App.jsx can use it
 export const db = getDatabase(app);
+
+// Export Auth and Google Provider for the Onboarding form
+export const auth = getAuth(app);
+export const provider = new GoogleAuthProvider();
+
+export default app;
